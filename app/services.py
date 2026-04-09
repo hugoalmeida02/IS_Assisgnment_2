@@ -103,8 +103,17 @@ def create_course(
     if capacity <= 0:
         raise BusinessRuleError("Course capacity must be greater than 0.")
 
+    normalized_name = name.strip()
+
+    existing_course = session.exec(
+        select(Course).where(Course.name == normalized_name)
+    ).first()
+
+    if existing_course:
+        raise ConflictError(f"Course with name '{normalized_name}' already exists.")
+
     course = Course(
-        name=name.strip(),
+        name=normalized_name,
         description=description.strip() if description else None,
         capacity=capacity
     )
@@ -135,7 +144,16 @@ def update_course(
     course = get_course(session, course_id)
 
     if name is not None:
-        course.name = name.strip()
+        normalized_name = name.strip()
+
+        existing_course = session.exec(
+            select(Course).where(Course.name == normalized_name)
+        ).first()
+
+        if existing_course and existing_course.id != course_id:
+            raise ConflictError(f"Course with name '{normalized_name}' already exists.")
+
+        course.name = normalized_name
 
     if description is not None:
         course.description = description.strip()
