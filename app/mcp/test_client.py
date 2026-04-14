@@ -3,21 +3,6 @@ import asyncio
 from fastmcp import Client
 from app.mcp.server import mcp
 
-# Import side effects so tools/resources/prompts get registered
-from app.mcp import tools  # noqa: F401
-from app.mcp import resources  # noqa: F401
-from app.mcp import prompts  # noqa: F401
-
-
-async def main():
-    client = Client(mcp)
-
-    async with client:
-        import asyncio
-
-from fastmcp import Client
-from app.mcp.server import mcp
-
 from app.mcp import tools  # noqa: F401
 from app.mcp import resources  # noqa: F401
 from app.mcp import prompts  # noqa: F401

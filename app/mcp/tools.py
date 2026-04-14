@@ -1,7 +1,7 @@
-from sqlmodel import Session
-
+from sqlmodel import Session, select
 from app.database import engine
 from app.mcp.server import mcp
+from app.models import Student, Course, Enrollment
 from app.services import (
     create_student,
     get_student,
@@ -28,17 +28,28 @@ from app.services import (
 def _student_to_dict(student):
     return {
         "id": student.id,
+        "label": f"{student.name} (ID {student.id}, {student.email})",
         "name": student.name,
         "email": student.email,
     }
 
 
-def _course_to_dict(course):
+def _course_to_dict(session: Session, course):
+    enrolled = len(
+        session.exec(
+            select(Enrollment).where(Enrollment.course_id == course.id)
+        ).all()
+    )
+    remaining_slots = course.capacity - enrolled
+
     return {
         "id": course.id,
+        "label": f"{course.name} (ID {course.id})",
         "name": course.name,
         "description": course.description,
         "capacity": course.capacity,
+        "enrolled": enrolled,
+        "remaining_slots": remaining_slots,
     }
 
 
@@ -58,9 +69,30 @@ def _handle_service_error(e: Exception) -> dict:
     }
 
 
+def _enrollment_to_detailed_dict(session: Session, enrollment):
+    student = session.get(Student, enrollment.student_id)
+    course = session.get(Course, enrollment.course_id)
+
+    return {
+        "id": enrollment.id,
+        "student": (
+            {
+                "id": student.id,
+                "name": student.name,
+                "email": student.email,
+                "label": f"{student.name} (ID {student.id}, {student.email})",
+            }
+            if student
+            else None
+        ),
+        "course": _course_to_dict(session, course) if course else None,
+    }
+
+
 # -------------------------
 # Student tools
 # -------------------------
+
 
 @mcp.tool
 def create_student_tool(name: str, email: str) -> dict:
@@ -70,6 +102,7 @@ def create_student_tool(name: str, email: str) -> dict:
             student = create_student(session, name, email)
             return {
                 "success": True,
+                "message": f"Student created successfully with ID {student.id}.",
                 "student": _student_to_dict(student),
             }
         except (NotFoundError, ConflictError, BusinessRuleError) as e:
@@ -92,7 +125,7 @@ def get_student_tool(student_id: int) -> dict:
 
 @mcp.tool
 def list_students_tool() -> dict:
-    """List all students."""
+    """List all students with their ids and emails."""
     with Session(engine) as session:
         students = list_students(session)
         return {
@@ -103,9 +136,7 @@ def list_students_tool() -> dict:
 
 @mcp.tool
 def update_student_tool(
-    student_id: int,
-    name: str | None = None,
-    email: str | None = None
+    student_id: int, name: str | None = None, email: str | None = None
 ) -> dict:
     """Update a student."""
     with Session(engine) as session:
@@ -137,6 +168,7 @@ def delete_student_tool(student_id: int) -> dict:
 # Course tools
 # -------------------------
 
+
 @mcp.tool
 def create_course_tool(name: str, description: str | None, capacity: int) -> dict:
     """Create a new course."""
@@ -145,7 +177,8 @@ def create_course_tool(name: str, description: str | None, capacity: int) -> dic
             course = create_course(session, name, description, capacity)
             return {
                 "success": True,
-                "course": _course_to_dict(course),
+                "message": f"Course created successfully with ID {course.id}.",
+                "course": _course_to_dict(session, course),
             }
         except (NotFoundError, ConflictError, BusinessRuleError) as e:
             return _handle_service_error(e)
@@ -159,7 +192,7 @@ def get_course_tool(course_id: int) -> dict:
             course = get_course(session, course_id)
             return {
                 "success": True,
-                "course": _course_to_dict(course),
+                "course": _course_to_dict(session, course),
             }
         except (NotFoundError, ConflictError, BusinessRuleError) as e:
             return _handle_service_error(e)
@@ -167,12 +200,12 @@ def get_course_tool(course_id: int) -> dict:
 
 @mcp.tool
 def list_courses_tool() -> dict:
-    """List all courses."""
+    """List all courses with their ids."""
     with Session(engine) as session:
         courses = list_courses(session)
         return {
             "success": True,
-            "courses": [_course_to_dict(course) for course in courses],
+            "courses": [_course_to_dict(session, course) for course in courses],
         }
 
 
@@ -181,7 +214,7 @@ def update_course_tool(
     course_id: int,
     name: str | None = None,
     description: str | None = None,
-    capacity: int | None = None
+    capacity: int | None = None,
 ) -> dict:
     """Update a course."""
     with Session(engine) as session:
@@ -195,7 +228,7 @@ def update_course_tool(
             )
             return {
                 "success": True,
-                "course": _course_to_dict(course),
+                "course": _course_to_dict(session, course),
             }
         except (NotFoundError, ConflictError, BusinessRuleError) as e:
             return _handle_service_error(e)
@@ -219,6 +252,7 @@ def delete_course_tool(course_id: int) -> dict:
 # Enrollment tools
 # -------------------------
 
+
 @mcp.tool
 def enroll_student_by_id_tool(student_id: int, course_id: int) -> dict:
     """Enroll a student in a course using student id."""
@@ -227,11 +261,11 @@ def enroll_student_by_id_tool(student_id: int, course_id: int) -> dict:
             enrollment = enroll_student_by_id(session, student_id, course_id)
             return {
                 "success": True,
-                "enrollment": _enrollment_to_dict(enrollment),
+                "message": f"Enrollment created successfully with ID {enrollment.id}.",
+                "enrollment": _enrollment_to_detailed_dict(session, enrollment),
             }
         except (NotFoundError, ConflictError, BusinessRuleError) as e:
             return _handle_service_error(e)
-
 
 @mcp.tool
 def enroll_student_by_email_tool(email: str, course_id: int) -> dict:
@@ -241,7 +275,8 @@ def enroll_student_by_email_tool(email: str, course_id: int) -> dict:
             enrollment = enroll_student_by_email(session, email, course_id)
             return {
                 "success": True,
-                "enrollment": _enrollment_to_dict(enrollment),
+                "message": f"Enrollment created successfully with ID {enrollment.id}.",
+                "enrollment": _enrollment_to_detailed_dict(session, enrollment),
             }
         except (NotFoundError, ConflictError, BusinessRuleError) as e:
             return _handle_service_error(e)
@@ -249,12 +284,15 @@ def enroll_student_by_email_tool(email: str, course_id: int) -> dict:
 
 @mcp.tool
 def list_enrollments_tool() -> dict:
-    """List all enrollments."""
+    """List all enrollments with detailed student and course information."""
     with Session(engine) as session:
         enrollments = list_enrollments(session)
         return {
             "success": True,
-            "enrollments": [_enrollment_to_dict(enrollment) for enrollment in enrollments],
+            "enrollments": [
+                _enrollment_to_detailed_dict(session, enrollment)
+                for enrollment in enrollments
+            ],
         }
 
 
@@ -280,7 +318,7 @@ def list_courses_of_student_tool(student_id: int) -> dict:
             courses = list_courses_of_student(session, student_id)
             return {
                 "success": True,
-                "courses": [_course_to_dict(course) for course in courses],
+                "courses": [_course_to_dict(session, course) for course in courses],
             }
         except (NotFoundError, ConflictError, BusinessRuleError) as e:
             return _handle_service_error(e)

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Student-Course Assistant</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+    <div class="container">
+        <h1>Student-Course Assistant</h1>
+        <p class="subtitle">Ask the agent to manage students, courses, and enrollments.</p>
+
+        <div class="chat-box">
+            <label for="message">Message</label>
+            <textarea
+                id="message"
+                placeholder="Example: Enroll student with email ana@example.com in course 1"
+                rows="5"
+            ></textarea>
+
+            <button id="sendBtn">Send</button>
+        </div>
+
+        <div class="response-box">
+            <h2>Response</h2>
+            <pre id="response">No response yet.</pre>
+        </div>
+    </div>
+
+    <script>
+        const sendBtn = document.getElementById("sendBtn");
+        const messageInput = document.getElementById("message");
+        const responseBox = document.getElementById("response");
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+
+            if (!message) {
+                responseBox.textContent = "Please enter a message.";
+                return;
+            }
+
+            responseBox.textContent = "Loading...";
+
+            try {
+                const res = await fetch("/chat", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ message })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    responseBox.textContent = data.detail || "An error occurred.";
+                    return;
+                }
+
+                responseBox.textContent = data.response || "No response returned.";
+            } catch (error) {
+                responseBox.textContent = "Failed to contact the server.";
+            }
+        }
+
+        sendBtn.addEventListener("click", sendMessage);
+
+        messageInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
